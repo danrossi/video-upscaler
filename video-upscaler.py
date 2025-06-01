@@ -1,4 +1,10 @@
 
+'''
+    Video Upscaler
+    Automation tool for video upscaling using video2x
+    Author: danrossi <electroteque@protonmail.com>
+'''
+
 import argparse
 import logging
 import os
