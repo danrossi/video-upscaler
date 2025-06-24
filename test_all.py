@@ -23,8 +23,8 @@ async def run_upscale(input, output, noise_level, model, model_type):
 
         os.makedirs(out_dir, exist_ok=True)
         logger.info(f"Starting Upscale for {model.name} {model_type_name} in {out_dir}")
-        videoscaler = VideoUpscaler(input, out_dir, model, model_type, 4, noise_level, False, False)
-        videoscaler.run()
+        videoscaler = VideoUpscaler(input, out_dir, model, model_type, str(4), str(noise_level), False, False)
+        await videoscaler.rescale()
 
 async def main():
     parser = argparse.ArgumentParser()
