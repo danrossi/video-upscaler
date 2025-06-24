@@ -25,6 +25,7 @@ async def run_upscale(input, output, noise_level, model, model_type):
         logger.info(f"Starting Upscale for {model.name} {model_type_name} in {out_dir}")
         videoscaler = VideoUpscaler(input, out_dir, model, model_type, str(4), str(noise_level), False, False)
         await videoscaler.rescale()
+        #videoscaler.run()
 
 async def main():
     parser = argparse.ArgumentParser()
@@ -40,10 +41,11 @@ async def main():
 
         for model in ProcessorModelEnum:
             for type in modeltypesmap[model]:
-                run_tests.append(run_upscale(args.input, args.output, args.noise_level, model, type))
+                await run_upscale(args.input, args.output, args.noise_level, model, type)
+                #run_tests.append(run_upscale(args.input, args.output, args.noise_level, model, type))
 
         
-        await asyncio.gather(*run_tests)
+        #await asyncio.gather(*run_tests)
         
     except Exception as e:
         logger.error(e)
