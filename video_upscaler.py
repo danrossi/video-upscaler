@@ -69,9 +69,11 @@ class VideoUpscaler:
         self.noise_level = noise_level
         self.setDimensions(isHD, is4K)
 
+        logger.info(f"Starting Upscale {model.name} {self.model_type}")
+
     def setDimensions(self, isHD, is4K):
         self.width = None
-        
+
         if (self.model != ProcessorModelEnum.realesrgan):
             if (isHD):
                 self.scale = None
@@ -186,7 +188,6 @@ def main():
     args = parser.parse_args()
 
     try:
-        logger.info("Starting Upscale")
         videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, str(args.scale), str(args.noise_level), args.hd, args.fourk)
         videoscaler.run()
     except Exception as e:
