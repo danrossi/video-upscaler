@@ -33,7 +33,8 @@ async def run_command(cmd, log: Logger = None, verbose:bool = True):
         stdout=asyncio.subprocess.DEVNULL
         stderr=asyncio.subprocess.DEVNULL
 
-     
+     #print(*cmd)
+ 
      proc = await asyncio.create_subprocess_exec(*cmd, stdout=stdout, stderr=stderr)
 
      if (verbose):
@@ -175,15 +176,15 @@ def main():
     #parser.add_argument('-m', '--model', type=int, default=1)
     parser.add_argument('-m', '--model', action=enum_action(ProcessorModelEnum), default=ProcessorModelEnum.realesrgan)
     parser.add_argument('-t', '--model_type', type=int, default=1)
-    parser.add_argument('-s', '--scale', type=int, default=4)
-    parser.add_argument('-n', '--noise_level', type=int, default=3)
+    parser.add_argument('-s', '--scale', type=str, default=4)
+    parser.add_argument('-n', '--noise_level', type=str, default=3)
     parser.add_argument('--hd', action='store_true')
     parser.add_argument('--fourk', action='store_true')
     args = parser.parse_args()
 
     try:
         logger.info("Starting Upscale")
-        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, args.scale, args.noise_level, args.hd, args.fourk)
+        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, str(args.scale), str(args.noise_level), args.hd, args.fourk)
         videoscaler.run()
     except Exception as e:
         logger.error(e)
