@@ -18,5 +18,5 @@ It's built for windows only for now.
 # Usage
 
 ```
-python video-upscaler.py -i D:\videosrc -o D:\videodest
+python video_upscaler.py -i D:\videosrc -o D:\videodest
 ```
