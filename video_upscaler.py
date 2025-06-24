@@ -71,14 +71,16 @@ class VideoUpscaler:
 
     def setDimensions(self, isHD, is4K):
         self.width = None
-        if (isHD):
-            self.scale = None
-            self.width = "1920"
-            self.height = "1080"
-        if (is4K):
-            self.scale = None
-            self.width = "3840"
-            self.height = "2160"
+        
+        if (self.model != ProcessorModelEnum.realesrgan):
+            if (isHD):
+                self.scale = None
+                self.width = "1920"
+                self.height = "1080"
+            if (is4K):
+                self.scale = None
+                self.width = "3840"
+                self.height = "2160"
 
     def model_args(self):
         model_arg = ""
