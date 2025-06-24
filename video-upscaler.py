@@ -13,9 +13,13 @@ from logging import Logger
 from asyncio import StreamReader
 import tempfile
 from pathlib import Path
+from model_builder import ProcessorModelEnum, modeltypesmap
+from enum_action import enum_action
+import platform
 
 logger = logging.getLogger("videoupscaler")
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 async def write_output(stdout: StreamReader, stderr, log) -> None:
     while line := await stdout.readline():
@@ -46,14 +50,54 @@ def replace_extension(filename, new_extension):
 
 class VideoUpscaler:
 
-    def __init__(self, src_dir:str, out_dir:str):
-       self.src_dir = src_dir
-       self.out_dir = out_dir
-       self.video2x_path = os.path.join(os.environ.get('LOCALAPPDATA'), "Programs", "video2x")
-       self.video2x_bin = os.path.join(self.video2x_path, "video2x")
-       self.ffmpeg_bin = os.path.join(self.video2x_path, "ffmpeg","bin","ffmpeg")
+    def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool):
+        self.src_dir = src_dir
+        self.out_dir = out_dir
+       
+        if (platform.system == "Windows"):
+            self.video2x_path = os.path.join(os.environ.get('LOCALAPPDATA'), "Programs", "video2x")
+            self.video2x_bin = os.path.join(self.video2x_path, "video2x")
+            self.ffmpeg_bin = os.path.join(self.video2x_path, "ffmpeg","bin","ffmpeg")
+        else:
+            self.video2x_bin = "video2x"
+            self.ffmpeg_bin = "ffmpeg"
+            
+        self.model = model
+        self.model_type = modeltypesmap[model][model_type]
+        self.scale = scale
+        self.noise_level = noise_level
+        self.setDimensions(isHD, is4K)
 
-    
+    def setDimensions(self, isHD, is4K):
+        self.width = None
+        if (isHD):
+            self.scale = None
+            self.width = "1920"
+            self.height = "1080"
+        if (is4K):
+            self.scale = None
+            self.width = "3840"
+            self.height = "2160"
+
+    def model_args(self):
+        model_arg = ""
+        if (self.model == ProcessorModelEnum.realesrgan):
+            model_arg = "--realesrgan-model"
+        elif (self.model == ProcessorModelEnum.libplacebo):
+            model_arg = "libplacebo-shader"
+        elif (self.model == ProcessorModelEnum.realcugan):
+            model_arg = "--realcugan-model"
+        elif (self.model == ProcessorModelEnum.rife):
+            model_arg = "--rife-model"
+
+        return ["-p", self.model.name, model_arg, self.model_type]
+
+    def scale_args(self):
+        if (self.width):
+            return ["-w", self.width, "-h", self.height]
+        else:
+            return ["-s", self.scale]
+
     async def super_resolution(self, src_file, out_file):
         cmd = [
             self.video2x_bin,
@@ -61,15 +105,10 @@ class VideoUpscaler:
             src_file,
             '-c', 
             'h264_nvenc',
-            '--no-copy-streams',
-            '-p', 
-            'libplacebo',
-            '--libplacebo-shader', 
-            'anime4k-v4-a+a',
-            '-w', 
-            '1920',
-            '-h', 
-            '1080',
+            '--no-copy-streams']
+        cmd += self.model_args()
+        cmd += self.scale_args()
+        cmd += ['-n', self.noise_level,
             '-e',
             'preset=p7', 
             '-e', 
@@ -97,8 +136,10 @@ class VideoUpscaler:
             '1:a:0',
             out_file
             ]
+        
+        print(cmd)
 
-        await run_command(cmd, logger, True)
+        #await run_command(cmd, logger, True)
 
     async def process_video(self):
 
@@ -107,8 +148,7 @@ class VideoUpscaler:
                 try:
                     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
                         src_file = os.path.join(root, file)
-                        #print(os.path.join(root, file))
-                        #rint(temp_file.name)
+  
                         output_path = temp_file.name
 
                         dst_file = os.path.join(self.out_dir, replace_extension(file, ".mp4"))
@@ -130,16 +170,21 @@ class VideoUpscaler:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input', default="")
-    parser.add_argument('-o', '--output', default="")
-   # parser.add_argument('-s', '--scale', default="2", required=False)
+    parser.add_argument('-i', '--input', required=True)
+    parser.add_argument('-o', '--output', required=True)
+    #parser.add_argument('-m', '--model', type=int, default=1)
+    parser.add_argument('-m', '--model', action=enum_action(ProcessorModelEnum), default=ProcessorModelEnum.realesrgan)
+    parser.add_argument('-t', '--model_type', type=int, default=1)
+    parser.add_argument('-s', '--scale', type=int, default=4)
+    parser.add_argument('-n', '--noise_level', type=int, default=3)
+    parser.add_argument('--hd', action='store_true')
+    parser.add_argument('--fourk', action='store_true')
     args = parser.parse_args()
 
     try:
-        #logger.info("Starting Stream {0} with token {1}".format(stream_name, token))
-        videoscaler = VideoUpscaler(args.input, args.output)
+        logger.info("Starting Upscale")
+        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, args.scale, args.noise_level, args.hd, args.fourk)
         videoscaler.run()
-        #logger.info(message)
     except Exception as e:
         logger.error(e)
 
