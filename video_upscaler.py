@@ -53,8 +53,8 @@ class VideoUpscaler:
     def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool):
         self.src_dir = src_dir
         self.out_dir = out_dir
-       
-        if (platform.system == "Windows"):
+
+        if (platform.system() == "Windows"):
             self.video2x_path = os.path.join(os.environ.get('LOCALAPPDATA'), "Programs", "video2x")
             self.video2x_bin = os.path.join(self.video2x_path, "video2x")
             self.ffmpeg_bin = os.path.join(self.video2x_path, "ffmpeg","bin","ffmpeg")
@@ -116,6 +116,8 @@ class VideoUpscaler:
             '-o',
             out_file
             ]
+        
+        #print(cmd)
 
         await run_command(cmd, logger, True)
 
@@ -136,10 +138,8 @@ class VideoUpscaler:
             '1:a:0',
             out_file
             ]
-        
-        print(cmd)
 
-        #await run_command(cmd, logger, True)
+        await run_command(cmd, logger, True)
 
     async def process_video(self):
 
@@ -153,7 +153,7 @@ class VideoUpscaler:
 
                         dst_file = os.path.join(self.out_dir, replace_extension(file, ".mp4"))
 
-                        logger.debug(temp_file.name)
+                        #logger.debug(temp_file.name)
                         await self.super_resolution(src_file, output_path)
                         await self.mux_audio(src_file, output_path, dst_file)
                 finally:
