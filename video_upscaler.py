@@ -137,6 +137,7 @@ class VideoUpscaler:
             '0:v:0', 
             '-map', 
             '1:a:0',
+            '-y',
             out_file
             ]
 
