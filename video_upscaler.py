@@ -162,9 +162,13 @@ class VideoUpscaler:
                         #logger.debug(temp_file.name)
                         await self.super_resolution(src_file, output_path)
                         await self.mux_audio(src_file, output_path, dst_file)
+                        #if os.path.exists(output_path):
+                        #    os.remove(output_path)
                 finally:
                     if os.path.exists(output_path):
+                        temp_file.close()
                         os.remove(output_path)
+                await asyncio.sleep(10)
 
     async def rescale(self):
         await self.process_video()
