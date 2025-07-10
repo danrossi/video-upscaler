@@ -22,8 +22,12 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 
 async def write_output(stdout: StreamReader, stderr, log) -> None:
-    while line := await stdout.readline():
-        log.info("%s", line.decode().rstrip())
+    try:
+        while line := await stdout.readline():
+            #print(f"FFmpeg Output: {line.strip()}")
+            log.info("%s\n", line.decode().rstrip())
+    except Exception as e:
+            logger.error(e)  
 
 async def run_command(cmd, log: Logger = None, verbose:bool = True):
      if (verbose):
