@@ -51,7 +51,7 @@ async def run_command(cmd, log: Logger = None, verbose:bool = True):
         stdout=asyncio.subprocess.DEVNULL
         stderr=asyncio.subprocess.DEVNULL
 
-     #print(*cmd)
+     print(*cmd)
  
      proc = await asyncio.create_subprocess_exec(*cmd, stdout=stdout, stderr=stderr)
 
@@ -75,7 +75,7 @@ def replace_extension(filename, new_extension):
 
 class VideoUpscaler:
 
-    def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool):
+    def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool, thread_count: int):
         self.src_dir = src_dir
         self.out_dir = out_dir
 
@@ -91,6 +91,7 @@ class VideoUpscaler:
         self.model_type = modeltypesmap[model][model_type]
         self.scale = scale
         self.noise_level = noise_level
+        self.thread_count = thread_count
         self.setDimensions(isHD, is4K)
 
         logger.info(f"Starting Upscale {model.name} {self.model_type}")
@@ -138,6 +139,7 @@ class VideoUpscaler:
         cmd += self.model_args()
         cmd += self.scale_args()
         cmd += ['-n', self.noise_level,
+            '--thread-count', str(self.thread_count),
             '-e',
             'preset=p7', 
             '-e', 
@@ -211,12 +213,13 @@ def main():
     parser.add_argument('-t', '--model_type', type=int, default=1)
     parser.add_argument('-s', '--scale', type=str, default=4)
     parser.add_argument('-n', '--noise_level', type=str, default=3)
+    parser.add_argument('--tc', type=int, default=1)
     parser.add_argument('--hd', action='store_true')
     parser.add_argument('--fourk', action='store_true')
     args = parser.parse_args()
 
     try:
-        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, str(args.scale), str(args.noise_level), args.hd, args.fourk)
+        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, str(args.scale), str(args.noise_level), args.hd, args.fourk, args.tc)
         videoscaler.run()
     except Exception as e:
         logger.error(e)
