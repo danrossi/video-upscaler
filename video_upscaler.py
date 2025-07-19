@@ -16,23 +16,37 @@ from pathlib import Path
 from model_builder import ProcessorModelEnum, modeltypesmap
 from enum_action import enum_action
 import platform
+import re
 
 logger = logging.getLogger("videoupscaler")
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
-async def write_output(stdout: StreamReader, stderr, log) -> None:
+async def read_stream(stream, prefix, log: Logger = None):
     try:
-        while line := await stdout.readline():
-            #print(f"FFmpeg Output: {line.strip()}")
-            log.info("%s\n", line.decode().rstrip())
+        while True:
+            line = await stream.read(256)
+            if not line:
+                break
+            line_str = line.decode("utf-8").strip()
+            #log.info("frame" in line_str[:8])
+            if "frame" in line_str[:8]:
+                match = re.search(r"[-+]?[0-9]*\.?[0-9]+", line_str)
+                if match:
+                    float_value = float(match.group(0)) / 100
+
+                    log.info(f" Percent done {float_value} %")
+            else:
+                #log.info("")
+                log.info(f"{prefix}: {line_str}")
     except Exception as e:
             logger.error(e)  
+
+
 
 async def run_command(cmd, log: Logger = None, verbose:bool = True):
      if (verbose):
         stdout=asyncio.subprocess.PIPE
-        stderr=asyncio.subprocess.STDOUT
+        stderr=asyncio.subprocess.PIPE
      else:
         stdout=asyncio.subprocess.DEVNULL
         stderr=asyncio.subprocess.DEVNULL
@@ -41,9 +55,15 @@ async def run_command(cmd, log: Logger = None, verbose:bool = True):
  
      proc = await asyncio.create_subprocess_exec(*cmd, stdout=stdout, stderr=stderr)
 
+
      if (verbose):
-        stdout_task = asyncio.create_task(write_output(proc.stdout, proc.stderr, log))
-        return_code, _ = await asyncio.gather(proc.wait(), stdout_task)
+        #stdout_task = asyncio.create_task(write_output(proc.stdout, proc.stderr, log))
+        #return_code, _ = await asyncio.gather(proc.wait(), stdout_task)
+        await asyncio.gather(
+            read_stream(proc.stdout, "FFMPEG_STDOUT", log),
+            read_stream(proc.stderr, "FFMPEG_STDERR", log)
+        )
+        return_code = await proc.wait()
      else:
         return_code = await asyncio.gather(proc.wait())
     
@@ -126,7 +146,7 @@ class VideoUpscaler:
             out_file
             ]
         
-        #print(cmd)
+        print(cmd)
 
         await run_command(cmd, logger, True)
 
