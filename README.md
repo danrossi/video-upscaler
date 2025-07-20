@@ -15,8 +15,17 @@ It's built for windows only for now.
 ```
 ./install.ps1
 ```
+
+# Setup pipenv for packages
+
+```
+pipenv shell
+pipenv install
+```
+
 # Usage
 
 ```
+pipenv shell
 python video_upscaler.py -i D:\videosrc -o D:\videodest
 ```
