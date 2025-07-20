@@ -68,7 +68,7 @@ async def run_command(cmd, log: Logger = None, verbose:bool = True):
         stdout=asyncio.subprocess.DEVNULL
         stderr=asyncio.subprocess.DEVNULL
 
-     print(*cmd)
+     #print(*cmd)
  
      proc = await asyncio.create_subprocess_exec(*cmd, stdout=stdout, stderr=stderr)
 
@@ -164,7 +164,11 @@ class VideoUpscaler:
         cmd += ['-n', self.noise_level,    
             '--thread-count', str(self.thread_count),
             '-e',
-            'preset=p7', 
+            'preset=p7',
+            '-e',
+            'rc=vbr',
+            '-e',
+            'cq=19',
             '-e', 
             'tune=hq',
             '-o',
