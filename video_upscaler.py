@@ -175,7 +175,7 @@ class VideoUpscaler:
             out_file
             ]
         
-        print(cmd)
+        #print(cmd)
 
         await run_command(cmd, logger, True)
 
