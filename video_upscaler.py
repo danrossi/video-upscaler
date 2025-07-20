@@ -17,11 +17,28 @@ from model_builder import ProcessorModelEnum, modeltypesmap
 from enum_action import enum_action
 import platform
 import re
+from typing import Callable
+
+from rich.progress import Progress
+from rich.logging import RichHandler
+
+
+richHandler = RichHandler(show_path=True)
 
 logger = logging.getLogger("videoupscaler")
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-async def read_stream(stream, prefix, log: Logger = None):
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(message)s", 
+    datefmt="[%X]",
+    handlers=[
+        richHandler
+    ]
+)
+
+
+async def read_stream(stream, prefix, log: Logger, progress: Callable = None):
     try:
         while True:
             line = await stream.read(256)
@@ -34,7 +51,7 @@ async def read_stream(stream, prefix, log: Logger = None):
                 if match:
                     float_value = float(match.group(0)) / 100
 
-                    log.info(f" Percent done {float_value} %")
+                    progress(float_value)
             else:
                 #log.info("")
                 log.info(f"{prefix}: {line_str}")
@@ -55,19 +72,24 @@ async def run_command(cmd, log: Logger = None, verbose:bool = True):
  
      proc = await asyncio.create_subprocess_exec(*cmd, stdout=stdout, stderr=stderr)
 
+     with Progress() as progress:
+            
+        task = progress.add_task("[red]Processing Upscale...", total=100)
+            
+        def upload_progress(perc) -> None:
+            progress.update(task, completed=perc)
 
-     if (verbose):
-        #stdout_task = asyncio.create_task(write_output(proc.stdout, proc.stderr, log))
-        #return_code, _ = await asyncio.gather(proc.wait(), stdout_task)
-        await asyncio.gather(
-            read_stream(proc.stdout, "FFMPEG_STDOUT", log),
-            read_stream(proc.stderr, "FFMPEG_STDERR", log)
-        )
-        return_code = await proc.wait()
-     else:
-        return_code = await asyncio.gather(proc.wait())
-    
-     log.info(f'Stop Process, returned: {return_code}')
+
+        if (verbose):
+            await asyncio.gather(
+                read_stream(proc.stdout, "FFMPEG_STDOUT", log, upload_progress),
+                read_stream(proc.stderr, "FFMPEG_STDERR", log)
+            )
+            return_code = await proc.wait()
+        else:
+            return_code = await asyncio.gather(proc.wait())
+        
+        log.info(f'Stop Process, returned: {return_code}')
 
 def replace_extension(filename, new_extension):
      file_path = Path(filename)
@@ -133,12 +155,13 @@ class VideoUpscaler:
             self.video2x_bin,
             '-i',
             src_file,
-            '-c', 
+            '-c',
             'h264_nvenc',
+            #'-a', 'vulkan',
             '--no-copy-streams']
         cmd += self.model_args()
         cmd += self.scale_args()
-        cmd += ['-n', self.noise_level,
+        cmd += ['-n', self.noise_level,    
             '--thread-count', str(self.thread_count),
             '-e',
             'preset=p7', 
