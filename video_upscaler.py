@@ -155,6 +155,8 @@ class VideoUpscaler:
                 self.width = "3840"
                 self.height = "2160"
 
+                print(self.width)
+
     def model_args(self):
         model_arg = ""
         if (self.model == ProcessorModelEnum.realesrgan):
@@ -186,7 +188,8 @@ class VideoUpscaler:
             '--no-copy-streams']
         cmd += self.model_args()
         cmd += self.scale_args()
-        cmd += ['-n', self.noise_level,    
+        cmd += [
+            '-n', self.noise_level,    
             '--thread-count', str(self.thread_count),
             '-e',
             'preset=p7',
@@ -266,8 +269,8 @@ class VideoUpscaler:
                             except Exception as e:
                                 logger.error(e)
                         #logger.debug(temp_file.name)
-                        #await self.super_resolution(src_file, output_path)
-                        #await self.mux_audio(src_file, output_path, dst_file)
+                        await self.super_resolution(src_file, output_path)
+                        await self.mux_audio(src_file, output_path, dst_file)
                         #if os.path.exists(output_path):
                         #    os.remove(output_path)
                 finally:
