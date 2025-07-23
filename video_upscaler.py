@@ -13,12 +13,14 @@ from logging import Logger
 from asyncio import StreamReader
 import tempfile
 from pathlib import Path
-from model_builder import ProcessorModelEnum, modeltypesmap
+from model_builder import ProcessorModelEnum, modeltypesmap, multi_models_typemap 
 from enum_action import enum_action
 import platform
 import re
 from typing import Callable
 import math
+import traceback
+import shutil
 
 from rich.progress import Progress
 from rich.logging import RichHandler
@@ -126,57 +128,69 @@ class VideoUpscaler:
             self.ffmpeg_bin = "ffmpeg"
             self.ffprobe_bin = "ffprobe"
             
-        self.model = model
-        self.model_type = modeltypesmap[model][model_type]
+       
+        
         self.scale = int(scale)
         self.noise_level = noise_level
         self.thread_count = thread_count
         self.max_height = int(max_height)
+        self.model = None
+
+        self.setModel(model, model_type)
+
+        
         self.setDimensions(isHD, is4K)
 
-        logger.info(f"Starting Upscale {model.name} {self.model_type}")
+        
+
+    def setModel(self, model, model_type):
+        if (model == ProcessorModelEnum.lib2real):
+            self.models = multi_models_typemap[model]
+            logger.info(f"Starting Upscale {self.models}")
+        else:
+            self.model = model
+            self.model_type = modeltypesmap[model][model_type]
+            logger.info(f"Starting Upscale {model.name} {self.model_type}")
 
     def setMaxScale(self, height, max_height):
-        if (self.model == ProcessorModelEnum.realesrgan and max_height > 0):
+        if (self.model is not None and self.model == ProcessorModelEnum.realesrgan and max_height > 0):
             if ((height * self.scale) > max_height):
                 self.scale = min(math.floor(max_height / height),4)
                 logger.info(f"New Scale Set {self.scale}")
 
     def setDimensions(self, isHD, is4K):
-        self.width = None
+        self.width = 0
 
-        if (self.model != ProcessorModelEnum.realesrgan):
+        if (self.model is not None and self.model != ProcessorModelEnum.realesrgan):
             if (isHD):
-                self.scale = None
-                self.width = "1920"
-                self.height = "1080"
-            if (is4K):
-                self.scale = None
-                self.width = "3840"
-                self.height = "2160"
+                self.scale = 0
+                self.width = 1920
+                self.height = 1080
+            elif (is4K):
+                self.scale = 0
+                self.width = 3840
+                self.height = 2160
 
-                print(self.width)
-
-    def model_args(self):
+    def model_args(self, model: ProcessorModelEnum, model_type: str):
         model_arg = ""
-        if (self.model == ProcessorModelEnum.realesrgan):
+        if (model == ProcessorModelEnum.realesrgan):
             model_arg = "--realesrgan-model"
-        elif (self.model == ProcessorModelEnum.libplacebo):
+        elif (model == ProcessorModelEnum.libplacebo):
             model_arg = "libplacebo-shader"
-        elif (self.model == ProcessorModelEnum.realcugan):
+        elif (model == ProcessorModelEnum.realcugan):
             model_arg = "--realcugan-model"
-        elif (self.model == ProcessorModelEnum.rife):
+        elif (model == ProcessorModelEnum.rife):
             model_arg = "--rife-model"
 
-        return ["-p", self.model.name, model_arg, self.model_type]
+        return ["-p", model.name, model_arg, model_type]
 
-    def scale_args(self):
-        if (self.width):
-            return ["-w", self.width, "-h", self.height]
+    def scale_args(self, scale: int, width: int, height: int):
+        if (width > 0):
+            return ["-w", str(width), "-h", str(height)]
         else:
-            return ["-s", str(self.scale)]
+            return ["-s", str(scale)]
 
-    async def super_resolution(self, src_file, out_file):
+    async def super_resolution(self, src_file: str, out_file: str, model: ProcessorModelEnum, model_type: str, scale: int, width: int, height: int, lossless: bool = False):
         cmd = [
             self.video2x_bin,
             '-i',
@@ -186,19 +200,28 @@ class VideoUpscaler:
             #'h264_nvenc',
             #'-a', 'vulkan',
             '--no-copy-streams']
-        cmd += self.model_args()
-        cmd += self.scale_args()
+        cmd += self.model_args(model, model_type)
+        cmd += self.scale_args(scale, width, height)
         cmd += [
             '-n', self.noise_level,    
-            '--thread-count', str(self.thread_count),
-            '-e',
+            '--thread-count', str(self.thread_count)]
+        
+        if (lossless):
+            cmd += ['-e',
+                'preset=p7',
+                '-e', 
+                'tune=lossless']
+        else:
+            cmd += ['-e',
             'preset=p7',
+            '-e', 
+            'tune=hq']
+
+        cmd += [
             '-e',
             'rc=vbr',
             '-e',
             'cq=19',
-            '-e', 
-            'tune=hq',
             '-o',
             out_file
             ]
@@ -225,9 +248,31 @@ class VideoUpscaler:
             '-y',
             out_file
             ]
+        
+        print(cmd)
 
         await run_command(cmd, logger, True)
     
+    async def pre_process(self, src_file, src_file_name, tmp_dir):
+        tmp_src_file = os.path.join(tmp_dir, "transcoded_{0}".format(src_file_name))
+        cmd = [
+            self.ffmpeg_bin,
+            '-i',
+            src_file,
+            '-c:v', 
+            'libx265',
+            '-x265-params',
+            'lossless=1',
+            '-an', 
+            '-y',
+            tmp_src_file
+            ]
+        
+        print(cmd)
+
+        await run_command(cmd, logger, True)
+        return tmp_src_file
+
     async def get_video_dimensions(self, src_file):
         cmd = [
             self.ffprobe_bin,
@@ -248,6 +293,33 @@ class VideoUpscaler:
             return width, height
 
 
+    async def multi_model_pass(self, original_src_file, src_file, src_file_name, temp_dir, dst_file):
+        
+        next_src_file = src_file
+        
+
+        for model in self.models:
+            logger.info(f"Process pass with model {model["model"].name}")
+            dst_filename = "scaled_{0}_{1}".format(model["model"].name, src_file_name)
+            next_dst_file = os.path.join(temp_dir, dst_filename)
+            await self.super_resolution(next_src_file, next_dst_file, model["model"], model["type"], model["scale"], model["width"], model["height"], model["lossless"])
+            next_src_file = next_dst_file
+        
+        await self.mux_audio(original_src_file, next_dst_file, dst_file)
+
+    
+    async def single_model_pass(self, original_src_file, src_file, src_file_name, temp_dir, dst_file):
+
+        if (self.max_height > 0):
+            try:
+                width, height = await self.get_video_dimensions(src_file)
+                self.setMaxScale(height, self.max_height)
+            except Exception as e:
+                logger.error(e)
+
+        output_path = os.path.join(temp_dir, "scaled_" + src_file_name)
+        await self.super_resolution(src_file, output_path)
+        await self.mux_audio(original_src_file, output_path, dst_file)
 
 
     async def process_video(self):
@@ -255,28 +327,32 @@ class VideoUpscaler:
         for root, dirs, files in os.walk(self.src_dir):
             for file in files:
                 try:
-                    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
-                        src_file = os.path.join(root, file)
-  
-                        output_path = temp_file.name
+                    with tempfile.TemporaryDirectory(delete=False) as temp_dir:
+                            logger.info(f"Creating Temp Directory {temp_dir}")
 
-                        dst_file = os.path.join(self.out_dir, replace_extension(file, ".mp4"))
+                            src_file_name = replace_extension(file, ".mp4")
+                        
 
-                        if (self.max_height > 0):
-                            try:
-                                width, height = await self.get_video_dimensions(src_file)
-                                self.setMaxScale(height, self.max_height)
-                            except Exception as e:
-                                logger.error(e)
-                        #logger.debug(temp_file.name)
-                        await self.super_resolution(src_file, output_path)
-                        await self.mux_audio(src_file, output_path, dst_file)
-                        #if os.path.exists(output_path):
-                        #    os.remove(output_path)
+                            original_src_file = os.path.join(root, file)
+                            dst_file = os.path.join(self.out_dir, src_file_name)
+                            
+                            if (os.path.splitext(file) != "mp4"):
+                                src_file = await self.pre_process(original_src_file, src_file_name, temp_dir)
+
+                                logger.info(f"Converted Source from {original_src_file} to {src_file}")
+                            else:
+                                src_file = original_src_file
+
+                            logger.info(f"Processing Source {src_file}")
+
+                            if (self.models):
+                                await self.multi_model_pass(original_src_file, src_file, src_file_name, temp_dir, dst_file)
+                            else:
+                                await self.single_model_pass(original_src_file, src_file, temp_dir, dst_file)
                 finally:
-                    if os.path.exists(output_path):
-                        temp_file.close()
-                        os.remove(output_path)
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+
                 await asyncio.sleep(10)
 
     async def rescale(self):
@@ -307,6 +383,7 @@ def main():
         videoscaler.run()
     except Exception as e:
         logger.error(e)
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":

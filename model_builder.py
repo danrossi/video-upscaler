@@ -5,6 +5,7 @@ class ProcessorModelEnum(Enum):
     libplacebo = 2
     realcugan = 3
     rife = 4
+    lib2real = 5
 
     def __str__(self):
         return f"{str(self.value)} ({self.name})"
@@ -45,4 +46,26 @@ modeltypesmap = {
         13: "rife-v4.25-lite",
         14: "rife-v4.26"
     }
+}
+
+multi_models_typemap = {
+    ProcessorModelEnum.lib2real : [
+             {
+                 "model": ProcessorModelEnum.libplacebo,
+                 "type": modeltypesmap[ProcessorModelEnum.libplacebo][7],
+                 "width": 960,
+                 "height": 540,
+                 "scale": 0,
+                 "lossless": True
+             },
+             {
+                 "model": ProcessorModelEnum.realesrgan,
+                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][3],
+                 "scale": 4,
+                 "width": 0,
+                 "height": 0,
+                 "lossless": False
+             }
+                 
+        ]
 }
