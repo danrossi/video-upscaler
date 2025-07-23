@@ -229,7 +229,7 @@ class VideoUpscaler:
             out_file
             ]
         
-        print(cmd)
+        #print(cmd)
 
         await run_command(cmd, logger, True)
 
@@ -252,7 +252,7 @@ class VideoUpscaler:
             out_file
             ]
         
-        print(cmd)
+        #print(cmd)
 
         await run_command(cmd, logger, True)
     
@@ -271,7 +271,7 @@ class VideoUpscaler:
             tmp_src_file
             ]
         
-        print(cmd)
+        #print(cmd)
 
         await run_command(cmd, logger, True)
         return tmp_src_file
