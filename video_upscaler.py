@@ -349,7 +349,7 @@ class VideoUpscaler:
                             if (self.models):
                                 await self.multi_model_pass(original_src_file, src_file, src_file_name, temp_dir, dst_file)
                             else:
-                                await self.single_model_pass(original_src_file, src_file, temp_dir, dst_file)
+                                await self.single_model_pass(original_src_file, src_file, src_file_name, temp_dir, dst_file)
                 finally:
                     if os.path.exists(temp_dir):
                         shutil.rmtree(temp_dir)
