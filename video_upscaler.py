@@ -58,7 +58,8 @@ async def read_stream(stream, prefix, log: Logger, progress: Callable = None):
                 #log.info("")
                 log.info(f"{prefix}: {line_str}")
     except Exception as e:
-            logger.error(e)  
+        """"""
+            #logger.error(e)  
 
 
 
@@ -161,6 +162,7 @@ class VideoUpscaler:
 
     def setDimensions(self, isHD, is4K):
         self.width = 0
+        self.height = 0
 
         if (self.model is not None and self.model != ProcessorModelEnum.realesrgan):
             if (isHD):
@@ -319,7 +321,7 @@ class VideoUpscaler:
                 logger.error(e)
 
         output_path = os.path.join(temp_dir, "scaled_" + src_file_name)
-        await self.super_resolution(src_file, output_path)
+        await self.super_resolution(src_file, output_path, self.model, self.model_type, self.scale, self.width, self.height)
         await self.mux_audio(original_src_file, output_path, dst_file)
 
 
