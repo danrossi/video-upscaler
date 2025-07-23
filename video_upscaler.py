@@ -135,6 +135,7 @@ class VideoUpscaler:
         self.thread_count = thread_count
         self.max_height = int(max_height)
         self.model = None
+        self.models = None
 
         self.setModel(model, model_type)
 
