@@ -21,6 +21,7 @@ from typing import Callable
 import math
 import traceback
 import shutil
+import wslPath
 
 from rich.progress import Progress
 from rich.logging import RichHandler
@@ -48,7 +49,8 @@ async def read_stream(stream, prefix, log: Logger, progress: Callable = None):
                 break
             line_str = line.decode("utf-8").strip()
             #log.info("frame" in line_str[:8])
-            if "frame" in line_str[:8]:
+            #log.info(f"{prefix}: {line_str}")
+            if "frame" in line_str[:8] or "kframe" in line_str[:8]:
                 match = re.search(r"[-+]?[0-9]*\.?[0-9]+", line_str)
                 if match:
                     float_value = float(match.group(0)) / 100
@@ -118,10 +120,14 @@ class VideoUpscaler:
     def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool, thread_count: int, max_height: int):
         self.src_dir = src_dir
         self.out_dir = out_dir
+        self.useWSL = False
 
         if (platform.system() == "Windows"):
             self.video2x_path = os.path.join(os.environ.get('LOCALAPPDATA'), "Programs", "video2x")
             self.video2x_bin = os.path.join(self.video2x_path, "video2x")
+            #massive bug transcoding with windows ffmpeg. Cutting durations. Use WSL. 
+            self.wsl_ffmpeg_bin = ['wsl', 'ffmpeg']
+            self.useWSL = True
             self.ffmpeg_bin = os.path.join(self.video2x_path, "ffmpeg","bin","ffmpeg")
             self.ffprobe_bin = os.path.join(self.video2x_path, "ffmpeg","bin","ffprobe")
         else:
@@ -193,16 +199,18 @@ class VideoUpscaler:
         else:
             return ["-s", str(scale)]
 
-    async def super_resolution(self, src_file: str, out_file: str, model: ProcessorModelEnum, model_type: str, scale: int, width: int, height: int, lossless: bool = False):
+    async def super_resolution(self, src_file: str, out_file: str, model: ProcessorModelEnum, model_type: str, scale: int, width: int, height: int, no_audio:bool = False, lossless: bool = False):
         cmd = [
             self.video2x_bin,
             '-i',
             src_file,
             '-c',
-            'hevc_nvenc',
-            #'h264_nvenc',
-            #'-a', 'vulkan',
-            '--no-copy-streams']
+            'hevc_nvenc'
+            ]
+        
+        if (no_audio):
+            cmd += ['--no-copy-streams']
+
         cmd += self.model_args(model, model_type)
         cmd += self.scale_args(scale, width, height)
         cmd += [
@@ -219,6 +227,14 @@ class VideoUpscaler:
             'preset=p7',
             '-e', 
             'tune=hq']
+    
+        """
+        cmd += ['-e',
+                'crf=17',
+                '-e', 
+                'preset=slow']
+        """
+
 
         cmd += [
             '-e',
@@ -257,21 +273,40 @@ class VideoUpscaler:
         await run_command(cmd, logger, True)
     
     async def pre_process(self, src_file, src_file_name, tmp_dir):
-        tmp_src_file = os.path.join(tmp_dir, "transcoded_{0}".format(src_file_name))
-        cmd = [
-            self.ffmpeg_bin,
+        tmp_src_file = converted_tmp_src_file = os.path.join(tmp_dir, "transcoded_{0}".format(src_file_name))
+
+        #Massive bug with Windows ffmpeg for transcoding. timescale and durations are cut. Use Linux WSL ffmpeg instead
+        if (self.useWSL):
+            converted_tmp_src_file = wslPath.to_posix(tmp_src_file)
+            src_file = wslPath.to_posix(src_file)
+            cmd = self.wsl_ffmpeg_bin
+        else:
+            cmd = [self.ffmpeg_bin]
+
+        cmd += [
             '-i',
             src_file,
             '-c:v', 
-            'libx265',
-            '-x265-params',
-            'lossless=1',
-            '-an', 
-            '-y',
-            tmp_src_file
+            'libx265'
             ]
         
-        #print(cmd)
+        #cmd += ['-preset:v p7',
+        #        '-tune:v lossless']
+        
+        cmd +=[
+            '-x265-params',
+            'lossless=1',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '192k', 
+            '-y',
+            converted_tmp_src_file
+            ]
+        
+        
+        
+        print(' '.join(cmd))
 
         await run_command(cmd, logger, True)
         return tmp_src_file
@@ -296,7 +331,7 @@ class VideoUpscaler:
             return width, height
 
 
-    async def multi_model_pass(self, original_src_file, src_file, src_file_name, temp_dir, dst_file):
+    async def multi_model_pass(self, src_file, src_file_name, temp_dir, dst_file):
         
         next_src_file = src_file
         
@@ -305,13 +340,13 @@ class VideoUpscaler:
             logger.info(f"Process pass with model {model["model"].name}")
             dst_filename = "scaled_{0}_{1}".format(model["model"].name, src_file_name)
             next_dst_file = os.path.join(temp_dir, dst_filename)
-            await self.super_resolution(next_src_file, next_dst_file, model["model"], model["type"], model["scale"], model["width"], model["height"], model["lossless"])
+            await self.super_resolution(next_src_file, next_dst_file, model["model"], model["type"], model["scale"], model["width"], model["height"], True, model["lossless"])
             next_src_file = next_dst_file
         
-        await self.mux_audio(original_src_file, next_dst_file, dst_file)
+        await self.mux_audio(src_file, next_dst_file, dst_file)
 
     
-    async def single_model_pass(self, original_src_file, src_file, src_file_name, temp_dir, dst_file):
+    async def single_model_pass(self, src_file, dst_file):
 
         if (self.max_height > 0):
             try:
@@ -320,9 +355,9 @@ class VideoUpscaler:
             except Exception as e:
                 logger.error(e)
 
-        output_path = os.path.join(temp_dir, "scaled_" + src_file_name)
-        await self.super_resolution(src_file, output_path, self.model, self.model_type, self.scale, self.width, self.height)
-        await self.mux_audio(original_src_file, output_path, dst_file)
+        await self.super_resolution(src_file, dst_file, self.model, self.model_type, self.scale, self.width, self.height)
+        #await self.super_resolution(src_file, output_path, self.model, self.model_type, self.scale, self.width, self.height)
+        #await self.mux_audio(original_src_file, output_path, dst_file)
 
 
     async def process_video(self):
@@ -339,8 +374,9 @@ class VideoUpscaler:
                             original_src_file = os.path.join(root, file)
                             dst_file = os.path.join(self.out_dir, src_file_name)
                             
-                            if (os.path.splitext(file) != "mp4"):
+                            if (os.path.splitext(file)[1] != ".mp4"):
                                 src_file = await self.pre_process(original_src_file, src_file_name, temp_dir)
+                                #await asyncio.sleep(20)
 
                                 logger.info(f"Converted Source from {original_src_file} to {src_file}")
                             else:
@@ -349,10 +385,13 @@ class VideoUpscaler:
                             logger.info(f"Processing Source {src_file}")
 
                             if (self.models):
-                                await self.multi_model_pass(original_src_file, src_file, src_file_name, temp_dir, dst_file)
+                                await self.multi_model_pass(src_file, src_file_name, temp_dir, dst_file)
                             else:
-                                await self.single_model_pass(original_src_file, src_file, src_file_name, temp_dir, dst_file)
+                                await self.single_model_pass(src_file, dst_file)
+                            
+                            #await asyncio.sleep(10)
                 finally:
+                    """"""
                     if os.path.exists(temp_dir):
                         shutil.rmtree(temp_dir)
 

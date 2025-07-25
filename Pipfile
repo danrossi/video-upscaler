@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 rich = "*"
+wslpath = "*"
 
 [dev-packages]
 

@@ -60,7 +60,7 @@ multi_models_typemap = {
              },
              {
                  "model": ProcessorModelEnum.realesrgan,
-                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][3],
+                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][1],
                  "scale": 4,
                  "width": 0,
                  "height": 0,
