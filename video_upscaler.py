@@ -15,16 +15,23 @@ import tempfile
 from pathlib import Path
 from model_builder import ProcessorModelEnum, modeltypesmap, multi_models_typemap 
 from enum_action import enum_action
-import platform
+import sys
 import re
 from typing import Callable
 import math
 import traceback
 import shutil
-import wslPath
+
 
 from rich.progress import Progress
 from rich.logging import RichHandler
+
+is_windows = False
+
+if sys.platform == 'win32':
+    import wslPath
+    is_windows = True
+
 
 richHandler = RichHandler(show_path=True)
 
@@ -117,12 +124,12 @@ def replace_extension(filename, new_extension):
 
 class VideoUpscaler:
 
-    def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool, thread_count: int, max_height: int):
+    def __init__(self, src_dir:str, out_dir:str, model: ProcessorModelEnum, model_type: int, scale:int, noise_level:int, isHD: bool, is4K: bool, thread_count: int, max_height: int, frame_rate_mul: int):
         self.src_dir = src_dir
         self.out_dir = out_dir
         self.useWSL = False
 
-        if (platform.system() == "Windows"):
+        if (is_windows):
             self.video2x_path = os.path.join(os.environ.get('LOCALAPPDATA'), "Programs", "video2x")
             self.video2x_bin = os.path.join(self.video2x_path, "video2x")
             #massive bug transcoding with windows ffmpeg. Cutting durations. Use WSL. 
@@ -143,6 +150,7 @@ class VideoUpscaler:
         self.max_height = int(max_height)
         self.model = None
         self.models = None
+        self.frame_rate_mul = frame_rate_mul
 
         self.setModel(model, model_type)
 
@@ -157,8 +165,23 @@ class VideoUpscaler:
             logger.info(f"Starting Upscale {self.models}")
         else:
             self.model = model
-            self.model_type = modeltypesmap[model][model_type]
-            logger.info(f"Starting Upscale {model.name} {self.model_type}")
+            model_item = modeltypesmap[model][model_type]
+            self.model_type = model_item["type"]
+
+            if ("max_scale" in model_item and self.scale > model_item["max_scale"]):
+                self.scale = model_item["max_scale"]
+            
+            if ("min_scale" in model_item and self.scale < model_item["min_scale"]):
+                self.scale = model_item["min_scale"]
+
+            if ("max_noise_level" in model_item and self.noise_level > model_item["max_noise_level"]):
+                self.noise_level = model_item["max_noise_level"]
+
+            if (model == ProcessorModelEnum.rife and self.frame_rate_mul == 0):
+                self.frame_rate_mul = 2
+
+
+            logger.info(f"Starting Upscale {model.name} {self.model_type} Scale {self.scale} Noise Level {self.noise_level}")
 
     def setMaxScale(self, height, max_height):
         if (self.model is not None and self.model == ProcessorModelEnum.realesrgan and max_height > 0):
@@ -170,7 +193,7 @@ class VideoUpscaler:
         self.width = 0
         self.height = 0
 
-        if (self.model is not None and self.model != ProcessorModelEnum.realesrgan):
+        if (self.model is not None and self.model == ProcessorModelEnum.libplacebo):
             if (isHD):
                 self.scale = 0
                 self.width = 1920
@@ -182,6 +205,7 @@ class VideoUpscaler:
 
     def model_args(self, model: ProcessorModelEnum, model_type: str):
         model_arg = ""
+        cmd = []
         if (model == ProcessorModelEnum.realesrgan):
             model_arg = "--realesrgan-model"
         elif (model == ProcessorModelEnum.libplacebo):
@@ -190,14 +214,25 @@ class VideoUpscaler:
             model_arg = "--realcugan-model"
         elif (model == ProcessorModelEnum.rife):
             model_arg = "--rife-model"
+            cmd += ["--rife-uhd"]
 
-        return ["-p", model.name, model_arg, model_type]
+        cmd += ["-p", model.name, model_arg, model_type]
+        return cmd
 
-    def scale_args(self, scale: int, width: int, height: int):
+    def scale_noise_args(self, scale: int, width: int, height: int):
+        cmd = []
         if (width > 0):
-            return ["-w", str(width), "-h", str(height)]
+            cmd += ["-w", str(width), "-h", str(height)]
         else:
-            return ["-s", str(scale)]
+            cmd += ["-s", str(scale)]
+        
+        if (self.noise_level >= 0):
+            cmd += ['-n', str(self.noise_level)]
+        
+        if (self.frame_rate_mul > 0):
+            cmd += ['-m', str(self.frame_rate_mul)]
+        
+        return cmd
 
     async def super_resolution(self, src_file: str, out_file: str, model: ProcessorModelEnum, model_type: str, scale: int, width: int, height: int, no_audio:bool = False, lossless: bool = False):
         cmd = [
@@ -212,10 +247,8 @@ class VideoUpscaler:
             cmd += ['--no-copy-streams']
 
         cmd += self.model_args(model, model_type)
-        cmd += self.scale_args(scale, width, height)
-        cmd += [
-            '-n', self.noise_level,    
-            '--thread-count', str(self.thread_count)]
+        cmd += self.scale_noise_args(scale, width, height)
+        cmd += ['--thread-count', str(self.thread_count)]
         
         if (lossless):
             cmd += ['-e',
@@ -245,7 +278,7 @@ class VideoUpscaler:
             out_file
             ]
         
-        #print(cmd)
+        #print(' '.join(cmd))
 
         await run_command(cmd, logger, True)
 
@@ -306,7 +339,7 @@ class VideoUpscaler:
         
         
         
-        print(' '.join(cmd))
+        #print(' '.join(cmd))
 
         await run_command(cmd, logger, True)
         return tmp_src_file
@@ -413,15 +446,17 @@ def main():
     parser.add_argument('-m', '--model', action=enum_action(ProcessorModelEnum), default=ProcessorModelEnum.realesrgan)
     parser.add_argument('-t', '--model_type', type=int, default=1)
     parser.add_argument('-s', '--scale', type=int, default=4)
-    parser.add_argument('-n', '--noise_level', type=str, default=3)
+    parser.add_argument('-n', '--noise_level', type=int, default=3)
     parser.add_argument('--tc', type=int, default=1)
     parser.add_argument('--mh', type=int, default=0)
     parser.add_argument('--hd', action='store_true')
     parser.add_argument('--fourk', action='store_true')
+    parser.add_argument('--frame_rate_mul', type=int, default=0)
+   
     args = parser.parse_args()
 
     try:
-        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, str(args.scale), str(args.noise_level), args.hd, args.fourk, args.tc, args.mh)
+        videoscaler = VideoUpscaler(args.input, args.output, args.model, args.model_type, args.scale, args.noise_level, args.hd, args.fourk, args.tc, args.mh, args.frame_rate_mul)
         videoscaler.run()
     except Exception as e:
         logger.error(e)
