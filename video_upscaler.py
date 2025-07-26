@@ -160,7 +160,8 @@ class VideoUpscaler:
         
 
     def setModel(self, model, model_type):
-        if (model == ProcessorModelEnum.lib2real):
+       
+        if (model == ProcessorModelEnum.lib2realsr or model == ProcessorModelEnum.lib2realplusanime or model == ProcessorModelEnum.lib2realplus):
             self.models = multi_models_typemap[model]
             logger.info(f"Starting Upscale {self.models}")
         else:

@@ -5,7 +5,9 @@ class ProcessorModelEnum(Enum):
     libplacebo = 2
     realcugan = 3
     rife = 4
-    lib2real = 5
+    lib2realsr = 5
+    lib2realplusanime = 6
+    lib2realplus = 7
 
     def __str__(self):
         return f"{str(self.value)} ({self.name})"
@@ -39,10 +41,10 @@ modeltypesmap = {
 }
 
 multi_models_typemap = {
-    ProcessorModelEnum.lib2real : [
+    ProcessorModelEnum.lib2realsr : [
              {
                  "model": ProcessorModelEnum.libplacebo,
-                 "type": modeltypesmap[ProcessorModelEnum.libplacebo][7],
+                 "type": modeltypesmap[ProcessorModelEnum.libplacebo][7]["type"],
                  "width": 960,
                  "height": 540,
                  "scale": 0,
@@ -50,12 +52,50 @@ multi_models_typemap = {
              },
              {
                  "model": ProcessorModelEnum.realesrgan,
-                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][1],
+                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][1]["type"],
                  "scale": 4,
                  "width": 0,
                  "height": 0,
                  "lossless": False
              }
                  
-        ]
+    ],
+    ProcessorModelEnum.lib2realplusanime : [
+             {
+                 "model": ProcessorModelEnum.libplacebo,
+                 "type": modeltypesmap[ProcessorModelEnum.libplacebo][7]["type"],
+                 "width": 960,
+                 "height": 540,
+                 "scale": 0,
+                 "lossless": True
+             },
+             {
+                 "model": ProcessorModelEnum.realesrgan,
+                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][2]["type"],
+                 "scale": 4,
+                 "width": 0,
+                 "height": 0,
+                 "lossless": False
+             }
+                 
+    ],
+    ProcessorModelEnum.lib2realplus : [
+             {
+                 "model": ProcessorModelEnum.libplacebo,
+                 "type": modeltypesmap[ProcessorModelEnum.libplacebo][7]["type"],
+                 "width": 960,
+                 "height": 540,
+                 "scale": 0,
+                 "lossless": True
+             },
+             {
+                 "model": ProcessorModelEnum.realesrgan,
+                 "type": modeltypesmap[ProcessorModelEnum.realesrgan][3]["type"],
+                 "scale": 4,
+                 "width": 0,
+                 "height": 0,
+                 "lossless": False
+             }
+                 
+    ]
 }
